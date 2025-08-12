@@ -215,10 +215,10 @@ class GooglePatentsXHRDownloader:
                 pass
 
             try:
-                await page.wait_for_load_state("networkidle")
+                await page.wait_for_load_state("networkidle", timeout=1500)
             except Exception:
                 pass
-            await page.wait_for_timeout(800)
+            await page.wait_for_timeout(250)
 
             try:
                 search_results_html = await page.content()
@@ -242,10 +242,10 @@ class GooglePatentsXHRDownloader:
                 except Exception:
                     pass
                 try:
-                    await page.wait_for_load_state("networkidle")
+                    await page.wait_for_load_state("networkidle", timeout=1500)
                 except Exception:
                     pass
-                await page.wait_for_timeout(800)
+                await page.wait_for_timeout(250)
                 search_results_html = await page.content()
             except Exception:
                 # 마지막 시도: domcontentloaded 기준으로라도 HTML 확보
@@ -558,6 +558,7 @@ class GooglePatentsXHRDownloader:
                 results: List[PatentSummary] = []
                 if xhr_text:
                     results = self._parse_results_from_xhr(xhr_text)
+                    logger.info(f"Initial XHR results: {len(results)}")
 
                 # 필요 시 캡처된 요청으로 httpx 재현
                 if not results and captured and "/xhr/query" in captured.url:
@@ -583,7 +584,7 @@ class GooglePatentsXHRDownloader:
                         replay_headers.setdefault("X-Same-Domain", "1")
                         replay_headers.setdefault("Referer", captured.referer or GOOGLE_PATENTS_ORIGIN + "/")
 
-                        resp = await client.get(captured.url, headers=replay_headers)
+                        resp = await client.get(captured.url, headers=replay_headers, timeout=10.0)
                         if self.diagnostics and diag_dir is not None:
                             (diag_dir / "xhr_query_response.html").write_text(
                                 resp.text, encoding="utf-8"
@@ -603,6 +604,7 @@ class GooglePatentsXHRDownloader:
 
                         if resp.status_code < 400 and resp.text:
                             results = self._parse_results_from_xhr(resp.text)
+                            logger.info(f"Replayed XHR results: {len(results)}")
                         else:
                             logger.warning(
                                 f"XHR {resp.status_code}; falling back to page HTML parse"
@@ -622,10 +624,10 @@ class GooglePatentsXHRDownloader:
                         await page.goto(search_url)
                         await page.wait_for_load_state("domcontentloaded")
                         try:
-                            await page.wait_for_load_state("networkidle")
+                            await page.wait_for_load_state("networkidle", timeout=1500)
                         except Exception:
                             pass
-                        await page.wait_for_timeout(800)
+                        await page.wait_for_timeout(250)
                         html2 = await page.content()
                         results = self._parse_results_from_html(html2)
                     except Exception:
@@ -638,42 +640,224 @@ class GooglePatentsXHRDownloader:
                     except Exception:
                         results = []
 
-                # 추가 페이징: 더 많은 결과가 필요하면 다음 페이지를 따라가며 수집
+                # 추가 페이징/스크롤: 더 많은 결과가 필요하면 XHR 재요청, 스크롤 로드 또는 다음 페이지를 따라가며 수집
                 if len(results) < max_results:
                     seen: set[str] = {r.detail_url for r in results}
-                    while len(results) < max_results:
+
+                    # 0) XHR 기반 파라미터 페이지네이션(가능한 경우): page/start/num 조합 시도
+                    if captured and "/xhr/query" in captured.url:
                         try:
-                            # next 링크 탐색
-                            next_locator = page.locator("a[rel='next'], a[aria-label='Next']").first
-                            if not await next_locator.count():
-                                break
-                            href = await next_locator.get_attribute("href")
-                            if not href:
-                                break
-                            next_url = href if href.startswith("http") else GOOGLE_PATENTS_ORIGIN + href
-                            await page.goto(next_url)
+                            from urllib.parse import (
+                                urlsplit,
+                                urlunsplit,
+                                parse_qsl,
+                                urlencode,
+                                unquote,
+                            )
+
+                            split = urlsplit(captured.url)
+                            params = dict(parse_qsl(split.query, keep_blank_values=True))
+
+                            # 캡처된 쿼리는 상위 파라미터 url= 안에 실제 질의 파라미터가 존재함
+                            # 예: /xhr/query?url=q=...&oq=...
+                            inner_raw = params.get("url", "")
+                            inner_qs = unquote(inner_raw)
+                            inner_params = dict(parse_qsl(inner_qs, keep_blank_values=True))
+                            # 한 페이지당 최대한 많이 가져오도록 시도
+                            inner_params.setdefault("num", "100")
+
+                            def build_url(updated_inner: dict[str, str]) -> str:
+                                outer = dict(params)
+                                outer["url"] = urlencode(updated_inner)
+                                return urlunsplit(
+                                    (
+                                        split.scheme,
+                                        split.netloc,
+                                        split.path,
+                                        urlencode(outer),
+                                        split.fragment,
+                                    )
+                                )
+
+                            # 공통 재생 헤더(최소 요구)
+                            replay_headers = {
+                                "X-Same-Domain": "1",
+                                "Referer": captured.referer or GOOGLE_PATENTS_ORIGIN + "/",
+                            }
+
+                            # 우선 현재 파라미터로 한 번 더 최대 개수 요청 시도
                             try:
-                                await page.wait_for_load_state("networkidle")
+                                inner_params["num"] = str(min(max_results, 100))
+                                resp0 = await client.get(build_url(inner_params), headers=replay_headers, timeout=10.0)
+                                if resp0.status_code < 400 and resp0.text:
+                                    more0 = self._parse_results_from_xhr(resp0.text)
+                                    for m in more0:
+                                        if m.detail_url and m.detail_url not in seen:
+                                            results.append(m)
+                                            seen.add(m.detail_url)
+                                            if len(results) >= max_results:
+                                                break
                             except Exception:
                                 pass
-                            await page.wait_for_timeout(600)
-                            html_more = await page.content()
-                            more = self._parse_results_from_html(html_more)
-                            if not more:
-                                # DOM 폴백
-                                try:
-                                    more = await self._parse_results_from_dom(page)
-                                except Exception:
-                                    more = []
-                            # dedup 및 추가
-                            for item in more:
-                                if item.detail_url not in seen:
-                                    results.append(item)
-                                    seen.add(item.detail_url)
+
+                            # page=2..N 시도
+                            page_try_max = 10
+                            if len(results) < max_results:
+                                for page_no in range(2, page_try_max + 1):
+                                    params_page = dict(inner_params)
+                                    params_page["page"] = str(page_no)
+                                    try:
+                                        params_page["num"] = str(min(max_results, 100))
+                                        resp = await client.get(build_url(params_page), headers=replay_headers, timeout=10.0)
+                                        if resp.status_code >= 400 or not resp.text:
+                                            break
+                                        add_items = self._parse_results_from_xhr(resp.text)
+                                        new_added = 0
+                                        for m in add_items:
+                                            if m.detail_url and m.detail_url not in seen:
+                                                results.append(m)
+                                                seen.add(m.detail_url)
+                                                new_added += 1
+                                                if len(results) >= max_results:
+                                                    break
+                                        if new_added == 0:
+                                            # 동일 결과만 반복되면 중단
+                                            break
+                                    except Exception:
+                                        break
                                     if len(results) >= max_results:
                                         break
-                            if not await next_locator.count():
+
+                            # start=offset 시도(10 단위)
+                            if len(results) < max_results:
+                                for start_offset in range(10, 1000, 10):
+                                    params_start = dict(inner_params)
+                                    params_start["start"] = str(start_offset)
+                                    try:
+                                        params_start["num"] = str(min(max_results, 100))
+                                        resp = await client.get(build_url(params_start), headers=replay_headers, timeout=10.0)
+                                        if resp.status_code >= 400 or not resp.text:
+                                            break
+                                        add_items = self._parse_results_from_xhr(resp.text)
+                                        new_added = 0
+                                        for m in add_items:
+                                            if m.detail_url and m.detail_url not in seen:
+                                                results.append(m)
+                                                seen.add(m.detail_url)
+                                                new_added += 1
+                                                if len(results) >= max_results:
+                                                    break
+                                        if new_added == 0:
+                                            break
+                                    except Exception:
+                                        break
+                                    if len(results) >= max_results:
+                                        break
+                        except Exception:
+                            pass
+
+                    async def collect_from_current_page() -> int:
+                        """현재 페이지에서 결과를 파싱해 results에 병합하고 새로 추가된 개수를 반환한다."""
+                        added = 0
+                        try:
+                            html_now = await page.content()
+                        except Exception:
+                            html_now = ""
+                        more = self._parse_results_from_html(html_now)
+                        if not more:
+                            try:
+                                more = await self._parse_results_from_dom(page)
+                            except Exception:
+                                more = []
+                        for item in more:
+                            if item.detail_url and item.detail_url not in seen:
+                                results.append(item)
+                                seen.add(item.detail_url)
+                                added += 1
+                                if len(results) >= max_results:
+                                    break
+                        return added
+
+                    # 1) 무한 스크롤 형태 지원: 스크롤을 내려 더 많은 article을 로드
+                    try:
+                        while len(results) < max_results:
+                            prev_len = len(results)
+                            try:
+                                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                            except Exception:
                                 break
+                            try:
+                                await page.wait_for_load_state("networkidle", timeout=1500)
+                            except Exception:
+                                pass
+                            await page.wait_for_timeout(250)
+                            added = await collect_from_current_page()
+                            if added == 0 and len(results) == prev_len:
+                                break
+                    except Exception:
+                        pass
+
+                    # 2) 다음 페이지 링크 탐색: 다양한 셀렉터 시도
+                    next_selectors = [
+                        "a[rel='next' i]",
+                        "a[aria-label='Next' i]",
+                        "a[aria-label*='Next' i]",
+                        "a:has-text('Next')",
+                        "a:has-text('다음')",
+                        "button:has-text('Next')",
+                        "[role='link']:has-text('Next')",
+                        "a#pnnext",
+                        "a:has-text('›')",
+                        "a[aria-label*='›']",
+                    ]
+
+                    while len(results) < max_results:
+                        try:
+                            next_locator = None
+                            # 셀렉터 후보를 순서대로 검사
+                            for sel in next_selectors:
+                                loc = page.locator(sel).first
+                                try:
+                                    if await loc.count():
+                                        next_locator = loc
+                                        break
+                                except Exception:
+                                    continue
+                            if next_locator is None or not await next_locator.count():
+                                break
+
+                            href = await next_locator.get_attribute("href")
+                            if not href:
+                                # 링크가 버튼 형태인 경우 클릭 시도
+                                try:
+                                    await next_locator.click()
+                                except Exception:
+                                    break
+                                try:
+                                    await page.wait_for_load_state("networkidle", timeout=1500)
+                                except Exception:
+                                    pass
+                                await page.wait_for_timeout(250)
+                            else:
+                                next_url = href if href.startswith("http") else GOOGLE_PATENTS_ORIGIN + href
+                                await page.goto(next_url)
+                                try:
+                                    await page.wait_for_load_state("networkidle", timeout=1500)
+                                except Exception:
+                                    pass
+                                await page.wait_for_timeout(250)
+
+                            added = await collect_from_current_page()
+                            if added == 0:
+                                # 스크롤 보조 시도 후 종료
+                                try:
+                                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                                except Exception:
+                                    pass
+                                await page.wait_for_timeout(200)
+                                added2 = await collect_from_current_page()
+                                if added2 == 0:
+                                    break
                         except Exception:
                             break
 

@@ -1,0 +1,5 @@
+playwright==1.54.0
+httpx[http2]==0.27.0
+beautifulsoup4==4.12.3
+lxml>=5.2.2,<6
+loguru==0.7.2
