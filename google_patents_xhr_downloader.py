@@ -359,7 +359,7 @@ class GooglePatentsXHRDownloader:
                     results.append(
                         PatentSummary(
                             title=title, publication_number=pub, detail_url=detail_url
-                        )
+                        ))
             except Exception:
                 continue
 
@@ -413,7 +413,7 @@ class GooglePatentsXHRDownloader:
                         title=title or (pub or ""),
                         publication_number=pub,
                         detail_url=detail_url,
-                    )
+                    ))
             except Exception:
                 continue
 
@@ -455,7 +455,7 @@ class GooglePatentsXHRDownloader:
                                 title=title or (pub or ""),
                                 publication_number=pub,
                                 detail_url=detail_url,
-                            )
+                            ))
                 return results
         except Exception:
             # JSON 파싱 실패 시 HTML 로직으로 폴백
