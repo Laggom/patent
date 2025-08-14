@@ -19,6 +19,133 @@ Playwright로 초기 접속(세션/쿠키/헤더/보안 토큰 확보) 후,
 
 주의: 본 스크립트는 구글 사이트 변경에 민감합니다. 차단(403/429) 시 진단 아티팩트를
       활성화(`--diagnostics`)해 캡처된 요청을 확인하고 지연(`--delay`)을 늘려주세요.
+
+Google Patents 검색 문법 가이드 (생성형 AI용 체계적 매뉴얼):
+
+=== 기본 구문 구조 ===
+
+1. 연산자 우선순위 (높음 → 낮음):
+   1순위: 괄호 ()
+   2순위: 근접연산자 (NEAR, SAME, WITH, ADJ)  
+   3순위: NOT (-)
+   4순위: AND (기본값, 공백도 AND로 처리)
+   5순위: OR
+
+2. 기본 논리:
+   - 기본 연산자: AND (공백으로도 표현)
+   - 결합성: 좌결합 (A OR B C → (A OR B) AND C)
+   - 그룹핑: 괄호 () 사용 필수
+
+=== 검색 요소별 문법 ===
+
+A. 키워드 검색:
+   정확구문: "machine learning" (따옴표 필수)
+   제외: -"deep learning" (NOT 연산)
+   와일드카드: learn*, networ?, optim# (따옴표 외부에만)
+   
+B. 필드 제한:
+   제목: TI=(keyword)
+   초록: AB=(keyword)  
+   청구항: CL=(keyword)
+   전체텍스트: keyword (필드 미지정시 제목+초록+청구항+본문 검색)
+
+C. 분류 코드:
+   정확매칭: CPC=G06N3/08
+   하위포함: CPC=G06N3
+   
+D. 메타데이터:
+   출원인: assignee:"Company Name"
+   발명자: inventor:"Last Name"
+   날짜: after:2020, before:2024
+   국가: country:US, country:(US OR EP)
+   상태: status:grant, status:application
+
+E. 근접 연산자 (랭킹용, 필터링 아님):
+   거리지정: NEAR/5 (5단어 이내, 순서무관)
+   인접: ADJ/2 (2단어 이내, 순서유지)
+   문단내: SAME (200단어 이내)
+   문장내: WITH (20단어 이내)
+
+=== 올바른 구문 패턴 ===
+
+✅ 단순 조합:
+   machine learning AND neural network
+   TI=(artificial intelligence) AND assignee:"Google"
+   
+✅ 근접 연산자:
+   machine NEAR/3 learning SAME neural
+   TI=(quantum ADJ/1 computing)
+   
+✅ 복잡한 그룹핑:
+   (TI=(quantum) OR AB=(quantum)) AND CL=(computing)
+   ((A NEAR/3 B) AND (C ADJ D)) OR (E WITH F)
+
+✅ 메타데이터 조합:
+   "machine learning" AND assignee:"Google" AND after:2020 AND CPC=G06N
+
+=== 절대 금지 패턴 ===
+
+❌ 연산자 혼용:
+   word1 AND NEAR/5 word2    // AND 뒤에 근접연산자
+   word1 OR SAME word2       // OR 뒤에 근접연산자
+   
+❌ 괄호 오류:
+   ((((word1                 // 미매칭 괄호
+   TI=(word1] AND [AB=word2   // 대괄호 혼용
+   
+❌ 인용부호 내 특수문자:
+   "machine learn*"          // 인용부호 안에 와일드카드
+   "word1 NEAR/3 word2"      // 인용부호 안에 연산자
+
+=== 검색식 작성 알고리즘 ===
+
+1. 핵심 키워드 식별 → 정확구문은 따옴표, 변형어는 와일드카드
+2. 중요도별 필드 선택 → 제목 > 초록 > 청구항 순
+3. 메타데이터 조건 추가 → 출원인, 날짜, 분류코드
+4. 근접도 지정 → 관련성 높은 단어간 NEAR/ADJ 적용  
+5. 논리 구조 설계 → 괄호로 명확한 그룹핑
+6. 구문 검증 → 괄호 매칭, 연산자 조합 확인
+
+=== 실용적 한계 (테스트 검증됨) ===
+
+제한 없음: AND 조건 개수 (13개+ 성공)
+제한 없음: 근접연산자 중첩 (6중+ 성공)  
+제한 없음: 필드 조합 (TI+AB+CL+메타데이터)
+제한 없음: 복잡한 중첩 괄호 구조
+
+★ 검색 실패 규칙 (2025년 체계적 테스트 결과):
+
+검색 실패 유형:
+1. 구문 오류 → {"results":{"user_error":"invalid argument: query syntax error"}}
+2. 0건 결과 → {"results":{"total_num_results":0, ...}} (정상 응답)
+
+❌ 절대 안되는 구문 오류 패턴:
+- 잘못된 연산자 조합: "word1 AND NEAR/5 word2", "word1 OR SAME word2"
+- 괄호 매칭 오류: "((((word1", "word1))))"
+- 대괄호 혼용: "TI=(word1] AND [AB=word2"
+- 인용부호 내 특수문자: "training data*", "word1 NEAR/3 word2", "machine learn*"
+
+✅ 올바른 구문 패턴:
+- 근접연산자 연속: "word1 NEAR/5 word2 SAME word3"
+- 괄호 그룹핑: "(word1 NEAR/3 word2) AND (word3 ADJ word4)"
+- 정확한 인용부호: "exact phrase", pretraining OR "training data"
+- 와일드카드: word* AND learn* (인용부호 외부에서만)
+
+실제 한계 (테스트 완료):
+- AND 조건 개수: 13개+ 성공 (무제한)
+- 근접연산자 중첩: 6중+ 성공 (NEAR+SAME+WITH+ADJ+NEAR+NEAR)
+- 필드 조합: TI+AB+CL+메타데이터 성공 (무제한)
+- 복잡한 중첩 괄호: ((A AND B) OR (C WITH D)) AND E 성공
+- 복잡도는 문제없음, 오직 구문 오류만이 실패 원인
+
+오류 vs 0건 구분법:
+if "user_error" in response: 
+    # 구문 오류 → 쿼리 문법 수정 필요
+elif response["results"]["total_num_results"] == 0:
+    # 0건 결과 → 조건 완화 고려 (정상 동작)
+
+결론: Google Patents는 복잡도에 매우 관대하지만 구문 오류에 매우 엄격함
+
 """
 
 from __future__ import annotations
@@ -98,6 +225,53 @@ class GooglePatentsXHRDownloader:
         page.set_default_timeout(self.timeout * 1000)
         return browser, context, page
 
+    @staticmethod
+    def _normalize_query_string(query: str) -> str:
+        """사용자 쿼리를 Google Patents의 표준 구문으로 정규화한다.
+
+        Google Patents는 명시적 필드 접두사(abstract:/title:/claims:)보다
+        약어 구문(AB=/TI=/CL=)을 더 안정적으로 처리합니다.
+        DE=(Description) 필드는 연산자 동작이 불안정하여 변환하지 않습니다.
+
+        정규화 규칙:
+        1. 필드 약어 변환 (대소문자 무관):
+           - abstract: → AB=, title: → TI=, claims: → CL=
+        2. 메타데이터 필드 정규화:
+           - assignee: → assignee:, inventor: → inventor:
+           - before:/after: → before:/after:, country: → country:
+           - status: → status:, language: → language:
+
+        이미 표준 구문을 사용 중이면 변환하지 않습니다.
+        """
+
+        # 필드 약어 치환
+        field_replacements = {
+            r"\babstract:\s*": "AB=",
+            r"\btitle:\s*": "TI=", 
+            r"\bclaims:\s*": "CL=",
+        }
+        
+        # 메타데이터 필드 정규화 (일관성을 위해)
+        metadata_replacements = {
+            r"\bassignee\s*=\s*": "assignee:",
+            r"\binventor\s*=\s*": "inventor:",
+            r"\bcountry\s*=\s*": "country:",
+            r"\bstatus\s*=\s*": "status:",
+            r"\blanguage\s*=\s*": "language:",
+        }
+
+        normalized = query
+        
+        # 필드 약어 치환 적용
+        for pattern, repl in field_replacements.items():
+            normalized = re.sub(pattern, repl, normalized, flags=re.IGNORECASE)
+            
+        # 메타데이터 필드 정규화 적용
+        for pattern, repl in metadata_replacements.items():
+            normalized = re.sub(pattern, repl, normalized, flags=re.IGNORECASE)
+            
+        return normalized
+
     async def _try_accept_consent(self, page: Page) -> None:
         """구글 동의(Consent) 배너가 있는 경우 최대한 닫는다."""
 
@@ -160,6 +334,9 @@ class GooglePatentsXHRDownloader:
         search_results_html: str = ""
         xhr_response_text: Optional[str] = None
 
+        # 필드 별칭 정규화(abstract:/title:/claims: → AB=/TI=/CL=)
+        effective_query = self._normalize_query_string(query)
+
         def on_request(request: Any) -> None:
             nonlocal captured
             try:
@@ -188,10 +365,10 @@ class GooglePatentsXHRDownloader:
             # 우선 검색 input(id=searchInput) 시도, 없으면 일반 input 사용
             try:
                 await page.wait_for_selector("#searchInput", timeout=3000)
-                await page.locator("#searchInput").fill(query)
+                await page.locator("#searchInput").fill(effective_query)
             except Exception:
                 await page.wait_for_selector("input")
-                await page.locator("input").first.fill(query)
+                await page.locator("input").first.fill(effective_query)
             await page.keyboard.press("Enter")
 
             try:
@@ -230,7 +407,7 @@ class GooglePatentsXHRDownloader:
         # 2차 폴백: 검색 URL 직접 이동
         if not search_results_html or "<article" not in search_results_html:
             from urllib.parse import quote_plus
-            search_url = f"{GOOGLE_PATENTS_ORIGIN}/?q={quote_plus(query)}&hl=en&num=100"
+            search_url = f"{GOOGLE_PATENTS_ORIGIN}/?q={quote_plus(effective_query)}&hl=en&num=100"
             try:
                 await page.goto(search_url)
                 await self._try_accept_consent(page)
@@ -619,7 +796,8 @@ class GooglePatentsXHRDownloader:
                 # 추가 폴백: 검색 URL로 직접 이동하여 다시 파싱
                 if not results:
                     from urllib.parse import quote_plus
-                    search_url = GOOGLE_PATENTS_ORIGIN + "/?q=" + quote_plus(query) + "&hl=en&num=100"
+                    effective_query = self._normalize_query_string(query)
+                    search_url = GOOGLE_PATENTS_ORIGIN + "/?q=" + quote_plus(effective_query) + "&hl=en&num=100"
                     try:
                         await page.goto(search_url)
                         await page.wait_for_load_state("domcontentloaded")
@@ -907,7 +1085,8 @@ class GooglePatentsXHRDownloader:
                 try:
                     meta = {
                         "query": query,
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "effective_query": self._normalize_query_string(query),
+                        "timestamp": datetime.now().isoformat(),
                         "download_dir": str(self.download_dir.resolve()),
                         "count": len(saved_meta),
                         "items": saved_meta,
