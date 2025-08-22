@@ -6,9 +6,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 환경 설정
 ```bash
+# Windows
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m playwright install
+
+# Linux/macOS  
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m playwright install
+```
+
+### API 키 설정
+```bash
+# .env.example을 복사하여 .env 파일 생성
+cp .env.example .env
+# .env 파일에 Google Gemini API 키 입력
+# GOOGLE_API_KEY=your_actual_api_key_here
 ```
 
 ### 기본 실행
@@ -24,17 +39,40 @@ python patent_downloader.py --query "complex query" --out ./downloads --diagnost
 
 ### 특허 분석 (AI 기반 검색식 생성)
 ```bash
-# 기본 분석
-python patent_analyzer.py --pdf patent.pdf --output ./temp_results/analysis.json
+# 완전 자동화 파이프라인 (권장)
+python patent_pipeline.py --pdf patent.pdf --output ./temp_results/full_analysis.json
 
-# 전체 Seed Recall 계산
-python patent_analyzer.py --pdf patent.pdf --output ./temp_results/full_analysis.json --full-recall
+# 전체 Seed Recall 계산 (더 정확하지만 오래 걸림)
+python patent_pipeline.py --pdf patent.pdf --full-recall --output ./temp_results/detailed_analysis.json
+
+# 커스텀 설정으로 실행
+python patent_pipeline.py --pdf patent.pdf --prompt custom_prompt.txt --delay 2.0 --max-results 20 --output analysis.json
+
+# 개별 모듈 실행 (고급 사용자)
+# 1단계: 검색식 생성
+python query_generator.py --pdf patent.pdf --output ./temp_results/queries.json
+
+# 2단계: Seed Recall 분석  
+python recall_analyzer.py --queries ./temp_results/queries.json --pdf patent.pdf --output ./temp_results/recall.json
 ```
 
-### 테스트 실행 (미래 확장시)
+### 테스트 실행
 ```bash
+# 테스트 의존성 설치 (필요시)
 pip install pytest
+
+# 테스트 실행 (현재는 테스트 파일 없음, 향후 추가 예정)
 pytest -q tests/
+```
+
+### 환경 검증
+```bash
+# 가상환경 활성화 확인
+python --version  # Python 3.8+ 필요
+pip list | grep playwright  # playwright==1.54.0 확인
+
+# 브라우저 설치 확인
+python -c "from playwright.sync_api import sync_playwright; print('Playwright 설치 완료')"
 ```
 
 ## 아키텍처 이해
@@ -47,16 +85,32 @@ pytest -q tests/
 
 ### 주요 컴포넌트
 
-**GooglePatentsXHRDownloader 클래스**:
+**GooglePatentsXHRDownloader 클래스** (`patent_downloader.py`):
 - `_capture_xhr_request()`: Playwright로 XHR 요청 패턴 캡처
 - `_build_client_with_cookies()`: 캡처된 인증으로 httpx 클라이언트 구성  
 - `_parse_results_from_xhr()`: XHR JSON 응답 파싱
 - `_fetch_detail_and_pdf()`: 특허 상세페이지에서 PDF URL 추출
 - `_download_pdf()`: 스트리밍 PDF 다운로드
 
-**데이터 흐름**:
+**PatentQueryGenerator 클래스** (`query_generator.py`):
+- `upload_pdf_to_gemini()`: PDF를 Gemini API에 업로드
+- `generate_queries()`: AI 기반 검색식 생성
+- `generate_queries_from_pdf()`: PDF 분석부터 검색식 생성까지 전체 파이프라인
+
+**RecallAnalyzer 클래스** (`recall_analyzer.py`):
+- `execute_searches()`: 검색식들을 Google Patents에서 실행
+- `calculate_seed_recall()`: 원본 특허 발견 여부 기반 성능 측정
+- `analyze_recall()`: 검색부터 성능 분석까지 전체 파이프라인
+
+**워크플로우**:
 ```
-검색쿼리 → Playwright(브라우저 자동화) → XHR 캡처 → httpx(고속 요청) → 결과 파싱 → PDF 다운로드
+완전 자동화 파이프라인 (patent_pipeline.py):
+PDF 입력 → Gemini API → 검색식 생성 → Google Patents 검색 → Seed Recall 분석 → 통합 결과
+
+개별 모듈 사용:
+1. 검색식 생성: PDF → Gemini API → 검색식 JSON (query_generator.py)
+2. 성능 분석: 검색식 JSON → Google Patents → Seed Recall (recall_analyzer.py)  
+3. PDF 다운로드: 검색쿼리 → Playwright+httpx → PDF 파일 (patent_downloader.py)
 ```
 
 ### 쿼리 정규화
@@ -99,8 +153,10 @@ elif response["results"]["total_num_results"] == 0:
 ## 프로젝트 구조
 
 ### 핵심 파일들
+- **`patent_pipeline.py`**: 완전 자동화 파이프라인 (PDF → AI 검색식 → Seed Recall)
 - **`patent_downloader.py`**: Google Patents 검색 및 PDF 다운로드 엔진
-- **`patent_analyzer.py`**: AI 기반 특허 분석 및 검색식 생성 도구
+- **`query_generator.py`**: AI 기반 검색식 생성 도구 (개별 사용)
+- **`recall_analyzer.py`**: Seed Recall 계산 및 성능 분석 도구 (개별 사용)
 - **`analyzer_prompt.txt`**: Gemini AI용 검색식 생성 프롬프트 템플릿
 - **`requirements.txt`**: 핵심 의존성 (Playwright, httpx, BeautifulSoup, loguru, Gemini)
 
@@ -118,7 +174,16 @@ elif response["results"]["total_num_results"] == 0:
 - **테스트 결과 파일**: `./temp_results/` 폴더에 저장
 - **임시 다운로드**: `./temp_downloads/` 폴더 사용  
 - **분석 결과**: `./temp_results/` 폴더에 JSON/CSV 저장
+- **PDF 다운로드**: 사용자 지정 `--out` 경로 (기본값: `./downloads/`)
 - **.gitignore**에 임시 폴더들 추가하여 커밋 방지
+
+### 의존성 충돌 해결
+httpx 버전 충돌 발생 시:
+```bash
+# 격리된 환경에서만 실행
+pip install --force-reinstall httpx==0.27.0
+# 또는 별도 가상환경 사용 권장
+```
 
 ### 기능 추가 후 주석 업데이트 필수
 새로운 CLI 옵션이나 주요 기능을 추가한 후에는 반드시:

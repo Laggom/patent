@@ -1,0 +1,93 @@
+# 기술 진화 추적 중심 검색식 생성 프롬프트
+
+첨부된 PDF 특허 문서를 분석하여 기술의 시간적 진화 과정과 발전 경로를 추적하는 검색식을 생성해주세요.
+
+## 기술 진화 분석 요구사항
+
+1. **기술 발전 경로 매핑**:
+   - 기술의 역사적 발전 단계
+   - 세대별 기술 특징 및 개선점
+   - 기술적 패러다임 변화 포인트
+   - 혁신적 돌파구 및 전환점들
+
+2. **시계열 기술 동향**:
+   - 연도별 기술 발전 트렌드
+   - 특정 기간 내 집중적 연구 영역
+   - 기술 성숙도 및 라이프사이클 단계
+   - 미래 기술 발전 방향 예측
+
+3. **검색 전략** (6개 생성):
+   - **Historical Progression**: 역사적 기술 발전 과정
+   - **Generational Evolution**: 세대별 기술 진화
+   - **Recent Advances**: 최근 기술 발전 동향
+   - **Future Directions**: 미래 기술 발전 방향  
+   - **Cross-Generational**: 세대간 기술 융합
+   - **Breakthrough Points**: 기술적 혁신 포인트들
+
+## 진화 추적 검색 전략
+
+### 시간 구간별 분석
+- `after:1990 before:2000`: 1세대 기술
+- `after:2000 before:2010`: 2세대 기술  
+- `after:2010 before:2020`: 3세대 기술
+- `after:2020`: 최신 기술 동향
+
+### 기술 발전 단계별 키워드
+- 초기: `early`, `first`, `initial`, `primitive`
+- 발전: `improved`, `enhanced`, `advanced`, `optimized`  
+- 성숙: `mature`, `refined`, `sophisticated`, `state-of-art`
+- 차세대: `next generation`, `future`, `novel`, `breakthrough`
+
+### 연구 활동 추적
+- 학계: `AB=(research AND development AND university)`
+- 산업계: `AB=(commercial AND industrial AND product)`
+- 표준화: `AB=(standard AND specification AND protocol)`
+
+## 출력 형식
+
+```json
+{
+  "patent_info": {
+    "publication_number": "특허번호",
+    "title": "특허 제목",
+    "technology_field": "기술 분야",
+    "current_generation": "현재 기술 세대",
+    "technology_maturity": "기술 성숙도 (emerging/growing/mature/declining)",
+    "historical_context": "기술의 역사적 맥락",
+    "evolution_stage": "현재 진화 단계",
+    "future_outlook": "미래 발전 전망",
+    "key_milestones": ["기술발전 이정표1", "기술발전 이정표2"],
+    "keywords": ["진화추적키워드1", "진화추적키워드2"]
+  },
+  "search_queries": [
+    {
+      "strategy": "Historical Progression - 기술의 역사적 발전 과정 추적",
+      "query": "시간 구간별 기술 진화 검색식",
+      "expected_scope": "broad/medium/narrow", 
+      "time_period": "분석 대상 시기",
+      "evolution_focus": "특정 발전 측면",
+      "temporal_strategy": "과거지향/현재중심/미래예측",
+      "rationale": "이 검색식이 기술 진화를 어떻게 추적하는지 설명"
+    }
+  ]
+}
+```
+
+## 특별 지침
+
+1. **시간축 설정**: 기술 발전의 자연스러운 시간 구간 설정
+2. **연속성 추적**: 기술간 연결고리 및 상속 관계 파악  
+3. **단절점 식별**: 기술 패러다임 변화 지점 포착
+4. **다면적 관찰**: 기술적/상업적/사회적 관점에서의 진화
+5. **예측적 접근**: 현재 트렌드 기반 미래 방향 예측
+6. **글로벌 시각**: 지역별/국가별 기술 발전 차이 고려
+7. **융합적 사고**: 타 분야 기술과의 융합 진화 가능성
+
+## 기술 진화 분석 체크포인트
+
+- [ ] 1세대 → 2세대 → 3세대 기술 진화 경로 확인
+- [ ] 각 세대별 주요 개선점 및 혁신 요소 식별  
+- [ ] 기술 성숙도 곡선 상의 현재 위치 파악
+- [ ] 차세대 기술로의 전환 신호 감지
+- [ ] 기술 수명주기 관점에서의 전략적 포지셔닝
+- [ ] 경쟁 기술과의 발전 속도 비교 분석

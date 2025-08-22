@@ -1,0 +1,80 @@
+# 경쟁사 분석 중심 검색식 생성 프롬프트
+
+첨부된 PDF 특허 문서를 분석하여 경쟁사 및 경쟁 기술 발굴에 중점을 둔 검색식을 생성해주세요.
+
+## 경쟁 분석 요구사항
+
+1. **경쟁 환경 분석**:
+   - 동일/유사 기술 분야의 주요 플레이어
+   - 관련 기업들의 특허 포트폴리오 패턴  
+   - 기술 리더십 및 혁신 동향
+   - 특허 출원 활동 및 전략적 움직임
+
+2. **경쟁 기술 매핑**:
+   - 동일 문제를 해결하는 대안 기술들
+   - 유사한 기능을 제공하는 다른 접근법
+   - 상위/하위 기술 및 주변 기술들
+   - 기술 진화 경로 상의 경쟁 포인트
+
+3. **검색 전략** (6개 생성):
+   - **Major Competitors**: 주요 경쟁사 중심
+   - **Alternative Technologies**: 대안 기술 중심  
+   - **Similar Solutions**: 유사 해결책 중심
+   - **Technology Evolution**: 기술 발전 경로 중심
+   - **Cross-Industry**: 타 산업 유사 기술 중심
+   - **Emerging Players**: 신흥 기업 및 기술 중심
+
+## 경쟁 분석 검색 전략
+
+### 경쟁사 특화 검색
+- `assignee:"Samsung"`: 주요 경쟁사별
+- `assignee:("Apple" OR "Google" OR "Microsoft")`: 다중 경쟁사
+- `inventor:"유명한 발명자명"`: 핵심 발명자 추적
+
+### 대안 기술 발굴
+- 기능적 유사성: `AB=(same function OR similar effect)`
+- 기술적 대체성: `AB=(alternative AND method AND technique)`  
+- 문제 해결 관점: `AB=(solve AND problem AND approach)`
+
+### 기술 생태계 매핑
+- 상/하위 기술: `CPC=상위클래스*` 
+- 융합 기술: 다중 CPC 클래스 조합
+- 시간축 분석: `after:2020` 등 시기별 구분
+
+## 출력 형식
+
+```json
+{
+  "patent_info": {
+    "publication_number": "특허번호",
+    "title": "특허 제목",
+    "technology_field": "기술 분야",
+    "assignee": "출원인",
+    "key_inventors": ["발명자1", "발명자2"],
+    "competitive_landscape": "경쟁 환경 개요",
+    "main_competitors": ["경쟁사1", "경쟁사2", "경쟁사3"],
+    "alternative_approaches": ["대안기술1", "대안기술2"],
+    "keywords": ["경쟁분석키워드1", "경쟁분석키워드2"]
+  },
+  "search_queries": [
+    {
+      "strategy": "Major Competitors - 주요 경쟁사의 유사 기술 발굴",
+      "query": "경쟁사 중심 검색식",
+      "expected_scope": "broad/medium/narrow",
+      "competitive_focus": "경쟁사명 또는 경쟁기술",
+      "analysis_purpose": "침해분석/기술동향/무효자료 등",
+      "rationale": "이 검색식이 경쟁 기술을 어떻게 발굴하는지 설명"
+    }
+  ]
+}
+```
+
+## 특별 지침
+
+1. **시장 리더 우선**: 해당 분야의 주요 기업들 중심으로 분석
+2. **기술적 유사성**: 기능적으로 동일한 효과를 달성하는 기술들
+3. **특허 회피 설계**: 우회 설계 가능성 있는 대안 기술들
+4. **글로벌 관점**: 국가별 주요 플레이어 및 지역적 강자 포함
+5. **신기술 추적**: 새롭게 등장하는 혁신적 접근법들
+6. **포트폴리오 관점**: 개별 특허가 아닌 기술 포트폴리오 수준에서 분석
+7. **전략적 관점**: 단순 기술 비교를 넘어 사업 전략적 함의 고려

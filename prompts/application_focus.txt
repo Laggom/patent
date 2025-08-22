@@ -1,0 +1,79 @@
+# 응용 분야 중심 검색식 생성 프롬프트
+
+첨부된 PDF 특허 문서를 분석하여 기술의 응용 분야와 실제 사용 사례에 중점을 둔 검색식을 생성해주세요.
+
+## 응용 중심 분석 요구사항
+
+1. **응용 분야 매핑**:
+   - 주요 응용 산업 및 시장 영역
+   - 구체적 사용 사례 및 용도
+   - 적용 가능한 제품 카테고리
+   - 최종 사용자 및 고객층
+   - 산업적 가치 및 경제적 임팩트
+
+2. **응용 시나리오 분석**:
+   - 현실적 구현 환경 및 조건
+   - 타 기술과의 조합 및 통합 방식  
+   - 확장 가능성 및 발전 방향
+   - 경쟁 기술 대비 응용상 장점
+
+3. **검색 전략** (5개 생성):
+   - **Industry Application**: 산업 분야별 응용 중심
+   - **Use Case Scenarios**: 구체적 사용 시나리오 중심
+   - **Product Integration**: 제품 통합 및 구현 중심
+   - **Market Segments**: 시장 세그먼트 중심  
+   - **End-User Benefits**: 최종 사용자 혜택 중심
+
+## 응용 중심 검색 전략
+
+### 응용 분야 키워드 강조
+- 산업명: `automotive`, `aerospace`, `medical`, `consumer electronics`
+- 제품군: `smartphone`, `electric vehicle`, `medical device`
+- 용도: `diagnostic`, `treatment`, `monitoring`, `control`
+
+### 기능적 측면 강조  
+- `TI=(기능 + application)`: 기능적 응용
+- `AB=(use AND method AND system)`: 사용 방법 및 시스템
+- `AB=(benefit OR advantage OR improvement)`: 응용상 이점
+
+### 시장/산업 분류 활용
+- IPC 클래스의 응용 관점 해석
+- CPC 중 응용 분야 특화 클래스 활용
+- 다중 산업 교차점 검색
+
+## 출력 형식
+
+```json
+{
+  "patent_info": {
+    "publication_number": "특허번호",
+    "title": "특허 제목", 
+    "technology_field": "기술 분야",
+    "primary_applications": ["주요 응용분야1", "주요 응용분야2"],
+    "target_industries": ["대상 산업1", "대상 산업2"],
+    "use_cases": ["사용사례1", "사용사례2"],
+    "market_potential": "시장 잠재력 설명",
+    "competitive_advantages": ["응용상 장점1", "응용상 장점2"],
+    "keywords": ["응용키워드1", "응용키워드2"]
+  },
+  "search_queries": [
+    {
+      "strategy": "Industry Application - 주요 응용 산업 및 제품 분야 중심",
+      "query": "산업 응용 기반 검색식",
+      "expected_scope": "broad/medium/narrow",
+      "application_focus": "산업분야명",
+      "target_market": "대상 시장",
+      "rationale": "이 검색식이 응용 분야를 어떻게 포괄하는지 설명"
+    }
+  ]
+}
+```
+
+## 특별 지침
+
+1. **실용성 강조**: 실제 구현 가능한 응용 사례에 집중
+2. **시장 관점**: 상업적 가치와 시장 수요 반영
+3. **사용자 관점**: 최종 사용자의 니즈와 경험 고려
+4. **교차 분야**: 다양한 산업 간 융합 응용 탐색
+5. **미래 지향**: 신규 응용 가능성과 발전 방향 포함
+6. **구체성**: 추상적 개념보다 구체적 응용 사례 우선

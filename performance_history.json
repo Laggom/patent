@@ -1,0 +1,27 @@
+{
+  "metadata": {
+    "last_updated": "2025-08-23T00:24:20.948065",
+    "total_records": 2,
+    "version": "1.0"
+  },
+  "records": [
+    {
+      "strategy": "base_template",
+      "patent_number": "US10022677",
+      "seed_recall_rate": 0.0,
+      "total_queries": 3,
+      "successful_queries": 3,
+      "found_target": false,
+      "timestamp": ""
+    },
+    {
+      "strategy": "base_template",
+      "patent_number": "US10022677",
+      "seed_recall_rate": 0.0,
+      "total_queries": 3,
+      "successful_queries": 3,
+      "found_target": false,
+      "timestamp": ""
+    }
+  ]
+}
