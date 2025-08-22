@@ -9,3 +9,13 @@ __pycache__/
 archive/
 downloads/
 
+# 임시 파일 및 테스트 결과
+temp_results/
+temp_downloads/
+*_results.json
+test_*.json
+improved_*.json
+full_*.json
+
+# 환경 변수 파일은 커밋하지 않음
+.env

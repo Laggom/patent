@@ -13,13 +13,22 @@ python -m playwright install
 
 ### 기본 실행
 ```bash
-python google_patents_xhr_downloader.py --query "machine learning" --out ./downloads --max-results 3 --headless
+python patent_downloader.py --query "machine learning" --out ./downloads --max-results 3 --headless
 ```
 
 ### 진단 모드 (디버깅용)
 ```bash
-python google_patents_xhr_downloader.py --query "complex query" --out ./downloads --diagnostics
+python patent_downloader.py --query "complex query" --out ./downloads --diagnostics
 # 진단 아티팩트: ./downloads/diagnostics/query_slug/
+```
+
+### 특허 분석 (AI 기반 검색식 생성)
+```bash
+# 기본 분석
+python patent_analyzer.py --pdf patent.pdf --output ./temp_results/analysis.json
+
+# 전체 Seed Recall 계산
+python patent_analyzer.py --pdf patent.pdf --output ./temp_results/full_analysis.json --full-recall
 ```
 
 ### 테스트 실행 (미래 확장시)
@@ -89,12 +98,33 @@ elif response["results"]["total_num_results"] == 0:
 
 ## 프로젝트 구조
 
-- **`google_patents_xhr_downloader.py`**: 메인 엔트리포인트, 모든 기능 포함
-- **`requirements.txt`**: 핵심 의존성 (Playwright, httpx, BeautifulSoup, loguru)
-- **`archive/`**: 실험적 구현들 (배포 대상 아님)
+### 핵심 파일들
+- **`patent_downloader.py`**: Google Patents 검색 및 PDF 다운로드 엔진
+- **`patent_analyzer.py`**: AI 기반 특허 분석 및 검색식 생성 도구
+- **`analyzer_prompt.txt`**: Gemini AI용 검색식 생성 프롬프트 템플릿
+- **`requirements.txt`**: 핵심 의존성 (Playwright, httpx, BeautifulSoup, loguru, Gemini)
+
+### 지원 파일들
+- **`CLAUDE.md`**: 개발 가이드라인 (현재 파일)
 - **`AGENTS.md`**: 상세한 개발 가이드라인 및 코딩 스타일
+- **`archive/`**: 실험적 구현들 (배포 대상 아님)
+- **`temp_results/`**: AI 분석 결과 및 테스트 파일 임시 저장소
+- **`temp_downloads/`**: 임시 다운로드 파일들
 
 ## 개발 시 주의사항
+
+### 임시 파일 관리 정책
+테스트 및 개발 중 생성되는 임시 파일들은 별도 폴더에서 관리:
+- **테스트 결과 파일**: `./temp_results/` 폴더에 저장
+- **임시 다운로드**: `./temp_downloads/` 폴더 사용  
+- **분석 결과**: `./temp_results/` 폴더에 JSON/CSV 저장
+- **.gitignore**에 임시 폴더들 추가하여 커밋 방지
+
+### 기능 추가 후 주석 업데이트 필수
+새로운 CLI 옵션이나 주요 기능을 추가한 후에는 반드시:
+- 파일 상단 "사용 예시" 섹션에 새 옵션 사용법 추가
+- 기능별 예시 명령어를 명확하게 기입
+- 이후 개발자가 쉽게 참조할 수 있도록 주석 유지
 
 ### 사이트 차단 대응
 Google Patents는 과도한 요청을 차단할 수 있으므로:

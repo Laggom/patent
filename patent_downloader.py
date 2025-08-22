@@ -4,10 +4,26 @@ Playwright로 초기 접속(세션/쿠키/헤더/보안 토큰 확보) 후,
 해당 상태를 httpx로 재사용하여 XHR 검색 및 특허 PDF를 다운로드합니다.
 
 사용 예시:
-  python /Users/lag/coding/PatentResearch/google_patents_xhr_downloader.py \
+  # PDF 다운로드
+  python google_patents_xhr_downloader.py \
     --query "machine learning" \
-    --out "/Users/lag/coding/PatentResearch/test_downloads" \
+    --out "./downloads" \
     --max-results 3 \
+    --headless
+    
+  # 검색 결과 개수만 확인 (PDF 다운로드 건너뛰기)
+  python google_patents_xhr_downloader.py \
+    --query "CO2 membrane inventor:\"Haiqing Lin\"" \
+    --out "./downloads" \
+    --count-only \
+    --headless
+    
+  # 여러 쿼리 검색 결과 개수 확인
+  python google_patents_xhr_downloader.py \
+    --query "quantum computing" \
+    --query "machine learning" \
+    --out "./downloads" \
+    --count-only \
     --headless
 
 참고:
@@ -597,15 +613,18 @@ class GooglePatentsXHRDownloader:
         return results
 
     @staticmethod
-    def _parse_results_from_xhr(content: str) -> List[PatentSummary]:
+    def _parse_results_from_xhr(content: str) -> Tuple[List[PatentSummary], Optional[int]]:
         """/xhr/query 응답 파싱.
 
         - JSON 본문: cluster → result[] → id, patent.publication_number, patent.title 사용
         - HTML fragment 본문: 기존 HTML 파서 재사용
+        
+        Returns:
+            Tuple[List[PatentSummary], Optional[int]]: (특허 목록, 총 결과 개수)
         """
 
         if not content:
-            return []
+            return [], None
 
         # 1) JSON 응답 시
         try:
@@ -613,6 +632,7 @@ class GooglePatentsXHRDownloader:
                 data = json.loads(content)
                 results_node = data.get("results") or {}
                 clusters = results_node.get("cluster") or []
+                total_results = results_node.get("total_num_results")
                 results: List[PatentSummary] = []
                 for cluster in clusters:
                     for item in cluster.get("result", []):
@@ -633,13 +653,14 @@ class GooglePatentsXHRDownloader:
                                 publication_number=pub,
                                 detail_url=detail_url,
                             ))
-                return results
+                return results, total_results
         except Exception:
             # JSON 파싱 실패 시 HTML 로직으로 폴백
             pass
 
-        # 2) HTML fragment 폴백
-        return GooglePatentsXHRDownloader._parse_results_from_html(content)
+        # 2) HTML fragment 폴백 (총 결과 개수는 HTML에서 추출 불가능하므로 None)
+        html_results = GooglePatentsXHRDownloader._parse_results_from_html(content)
+        return html_results, None
 
     @staticmethod
     def _sanitize_filename(filename: str) -> str:
@@ -694,10 +715,82 @@ class GooglePatentsXHRDownloader:
         except Exception as exc:
             logger.error(f"PDF download error: {exc}")
             return False
+    
+    async def _fetch_all_results(
+        self, 
+        client: httpx.AsyncClient, 
+        captured: CapturedRequest, 
+        total_count: int,
+        replay_headers: Dict[str, str],
+        target_patent: Optional[str] = None
+    ) -> List[PatentSummary]:
+        """전체 검색 결과를 페이지별로 수집 (Seed Recall 계산용)"""
+        all_results = []
+        page_size = 100  # 한 번에 가져올 최대 결과 수
+        
+        # URL 파라미터 파싱
+        from urllib.parse import urlparse, parse_qs
+        parsed_url = urlparse(captured.url)
+        base_params = parse_qs(parsed_url.query)
+        
+        # 기본 파라미터를 dict로 변환
+        params = {}
+        for k, v in base_params.items():
+            params[k] = v[0] if v else ""
+        
+        pages_fetched = 0
+        max_pages = (total_count + page_size - 1) // page_size  # 올림 계산
+        
+        logger.info(f"Fetching up to {max_pages} pages ({total_count} total results)")
+        
+        for page in range(max_pages):
+            start_idx = page * page_size
+            params["num"] = str(min(page_size, total_count - start_idx))
+            params["start"] = str(start_idx)
+            
+            # URL 재구성
+            query_string = "&".join([f"{k}={v}" for k, v in params.items() if v])
+            fetch_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}?{query_string}"
+            
+            try:
+                logger.info(f"Fetching page {page + 1}/{max_pages} (results {start_idx + 1}-{start_idx + int(params['num'])})")
+                
+                resp = await client.get(fetch_url, headers=replay_headers, timeout=15.0)
+                if resp.status_code >= 400:
+                    logger.warning(f"Page {page + 1} failed with status {resp.status_code}")
+                    break
+                
+                page_results, _ = self._parse_results_from_xhr(resp.text)
+                all_results.extend(page_results)
+                pages_fetched += 1
+                
+                # Early termination: 타겟 특허를 찾으면 중단
+                if target_patent:
+                    normalized_target = target_patent.upper().replace(" ", "").replace(",", "").replace("-", "")
+                    for patent in page_results:
+                        if patent.publication_number:
+                            normalized_found = patent.publication_number.upper().replace(" ", "").replace(",", "").replace("-", "")
+                            if normalized_found == normalized_target:
+                                logger.info(f"🎯 Target patent {target_patent} found on page {page + 1}! Early termination.")
+                                return all_results
+                
+                # 진행률 로그
+                if pages_fetched % 5 == 0 or page == max_pages - 1:
+                    logger.info(f"Progress: {len(all_results)}/{total_count} results fetched ({len(all_results)/total_count*100:.1f}%)")
+                
+                # 요청 간 지연
+                await asyncio.sleep(0.5)
+                
+            except Exception as exc:
+                logger.error(f"Failed to fetch page {page + 1}: {exc}")
+                break
+        
+        logger.info(f"Collected {len(all_results)} results across {pages_fetched} pages")
+        return all_results
 
     async def search_and_download(
-        self, query: str, max_results: int
-    ) -> List[Path]:
+        self, query: str, max_results: int, count_only: bool = False, full_recall: bool = False
+    ) -> Tuple[List[Path], Optional[int], List[PatentSummary]]:
         """단일 쿼리로 검색하고 상위 N개의 PDF를 다운로드한다.
 
         매 쿼리마다 새로운 브라우저/컨텍스트를 생성하여 보안 토큰을 재캡처한다.
@@ -733,9 +826,12 @@ class GooglePatentsXHRDownloader:
 
                 # XHR 우선 시도: 먼저 브라우저에서 받은 원문 XHR 응답으로 파싱
                 results: List[PatentSummary] = []
+                total_count: Optional[int] = None
                 if xhr_text:
-                    results = self._parse_results_from_xhr(xhr_text)
+                    results, total_count = self._parse_results_from_xhr(xhr_text)
                     logger.info(f"Initial XHR results: {len(results)}")
+                    if total_count is not None:
+                        logger.info(f"Total search results available: {total_count}")
 
                 # 필요 시 캡처된 요청으로 httpx 재현
                 if not results and captured and "/xhr/query" in captured.url:
@@ -780,8 +876,10 @@ class GooglePatentsXHRDownloader:
                             )
 
                         if resp.status_code < 400 and resp.text:
-                            results = self._parse_results_from_xhr(resp.text)
+                            results, total_count = self._parse_results_from_xhr(resp.text)
                             logger.info(f"Replayed XHR results: {len(results)}")
+                            if total_count is not None:
+                                logger.info(f"Total search results available: {total_count}")
                         else:
                             logger.warning(
                                 f"XHR {resp.status_code}; falling back to page HTML parse"
@@ -868,7 +966,7 @@ class GooglePatentsXHRDownloader:
                                 inner_params["num"] = str(min(max_results, 100))
                                 resp0 = await client.get(build_url(inner_params), headers=replay_headers, timeout=10.0)
                                 if resp0.status_code < 400 and resp0.text:
-                                    more0 = self._parse_results_from_xhr(resp0.text)
+                                    more0, _ = self._parse_results_from_xhr(resp0.text)
                                     for m in more0:
                                         if m.detail_url and m.detail_url not in seen:
                                             results.append(m)
@@ -889,7 +987,7 @@ class GooglePatentsXHRDownloader:
                                         resp = await client.get(build_url(params_page), headers=replay_headers, timeout=10.0)
                                         if resp.status_code >= 400 or not resp.text:
                                             break
-                                        add_items = self._parse_results_from_xhr(resp.text)
+                                        add_items, _ = self._parse_results_from_xhr(resp.text)
                                         new_added = 0
                                         for m in add_items:
                                             if m.detail_url and m.detail_url not in seen:
@@ -916,7 +1014,7 @@ class GooglePatentsXHRDownloader:
                                         resp = await client.get(build_url(params_start), headers=replay_headers, timeout=10.0)
                                         if resp.status_code >= 400 or not resp.text:
                                             break
-                                        add_items = self._parse_results_from_xhr(resp.text)
+                                        add_items, _ = self._parse_results_from_xhr(resp.text)
                                         new_added = 0
                                         for m in add_items:
                                             if m.detail_url and m.detail_url not in seen:
@@ -1041,10 +1139,20 @@ class GooglePatentsXHRDownloader:
 
                 if not results:
                     logger.warning("검색 결과를 찾지 못했습니다.")
-                    return []
+                    return [], total_count, []
 
                 results = results[:max_results]
                 logger.info(f"Parsed {len(results)} results")
+
+                # count_only 모드에서는 PDF 다운로드 건너뛰고 특허 정보만 반환
+                if count_only:
+                    # full_recall 모드에서는 가능한 모든 결과 수집
+                    if full_recall and total_count and total_count > len(results):
+                        logger.info(f"Full recall mode: fetching all {total_count} results...")
+                        # target_patent을 인자로 전달하여 early termination 활용
+                        target_patent = getattr(self, '_target_patent', None)
+                        results = await self._fetch_all_results(client, captured, total_count, replay_headers, target_patent)
+                    return [], total_count, results
 
                 saved: List[Path] = []
                 saved_meta: List[Dict[str, Any]] = []
@@ -1098,7 +1206,7 @@ class GooglePatentsXHRDownloader:
                 except Exception:
                     pass
 
-                return saved
+                return saved, total_count, results
             finally:
                 # httpx 클라이언트 종료
                 try:
@@ -1116,19 +1224,19 @@ class GooglePatentsXHRDownloader:
                         pass
 
     async def search_and_download_many(
-        self, queries: List[str], max_results: int
-    ) -> Dict[str, List[Path]]:
+        self, queries: List[str], max_results: int, count_only: bool = False, full_recall: bool = False
+    ) -> Dict[str, Tuple[List[Path], Optional[int], List[PatentSummary]]]:
         """여러 쿼리를 순차 처리. 각 쿼리마다 보안 토큰을 재캡처한다."""
 
-        results: Dict[str, List[Path]] = {}
+        results: Dict[str, Tuple[List[Path], Optional[int], List[PatentSummary]]] = {}
         for i, q in enumerate(queries, 1):
             logger.info(f"◇ Query {i}/{len(queries)}: {q}")
             try:
-                saved = await self.search_and_download(q, max_results)
-                results[q] = saved
+                saved, total_count, patents = await self.search_and_download(q, max_results, count_only, full_recall)
+                results[q] = (saved, total_count, patents)
             except Exception as exc:
                 logger.error(f"Query failed: {q} ({exc})")
-                results[q] = []
+                results[q] = ([], None, [])
             if i < len(queries):
                 await asyncio.sleep(max(self.delay, 0.5))
         return results
@@ -1177,6 +1285,11 @@ def _build_cli_parser() -> Any:
         action="store_true",
         help="XHR/HTML 진단 아티팩트 저장",
     )
+    parser.add_argument(
+        "--count-only",
+        action="store_true",
+        help="검색 결과 개수만 확인 (PDF 다운로드 건너뛰기)",
+    )
     return parser
 
 
@@ -1211,16 +1324,34 @@ async def _amain(argv: List[str]) -> int:
         raise SystemExit("--query 또는 --query-file 중 하나는 필요합니다.")
 
     if len(queries) == 1:
-        saved = await downloader.search_and_download(
-            query=queries[0], max_results=args.max_results
+        saved, total_count, patents = await downloader.search_and_download(
+            query=queries[0], max_results=args.max_results, count_only=args.count_only
         )
-        logger.info(f"총 {len(saved)}개 파일 저장 완료: {out_dir}")
+        if args.count_only:
+            print(f"📊 검색 결과: {queries[0]}")
+            print(f"   - 파싱된 결과: {len(patents)} 건")
+            if total_count is not None:
+                print(f"   - 전체 검색 결과: {total_count:,} 건")
+            else:
+                print("   - 전체 검색 결과: 알 수 없음")
+        else:
+            logger.info(f"총 {len(saved)}개 파일 저장 완료: {out_dir}")
     else:
         all_saved = await downloader.search_and_download_many(
-            queries=queries, max_results=args.max_results
+            queries=queries, max_results=args.max_results, count_only=args.count_only
         )
-        total = sum(len(v) for v in all_saved.values())
-        logger.info(f"총 {total}개 파일 저장 완료 ({len(queries)}개 쿼리): {out_dir}")
+        if args.count_only:
+            print(f"📊 여러 쿼리 검색 결과:")
+            for query, (files, total_count, patents) in all_saved.items():
+                print(f"   🔍 {query}")
+                print(f"      - 파싱된 결과: {len(patents)} 건")
+                if total_count is not None:
+                    print(f"      - 전체 검색 결과: {total_count:,} 건")
+                else:
+                    print("      - 전체 검색 결과: 알 수 없음")
+        else:
+            total = sum(len(files) for files, _, _ in all_saved.values())
+            logger.info(f"총 {total}개 파일 저장 완료 ({len(queries)}개 쿼리): {out_dir}")
     return 0
 
 
